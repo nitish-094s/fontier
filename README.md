@@ -4,6 +4,14 @@
 
 Built with Tauri 2 (Rust) + React + Meta's Astryx design system. Windows 10/11.
 
+![Fontier Home: drop zone, library stats and recently installed families](docs/screenshots/home.webp)
+
+| Discover | Family page (dark theme) |
+|---|---|
+| ![Discover: live previews of display fonts from the open library](docs/screenshots/discover.webp) | ![Fraunces family page with a waterfall of sizes](docs/screenshots/family.webp) |
+
+![Manage: installed families as tiles with two selected and the bulk action bar](docs/screenshots/manage.webp)
+
 ## Capabilities
 
 ### Home
