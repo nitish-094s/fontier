@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 164 314" width="164" height="314">
+  <!-- Installer Welcome / Finish sidebar: the icon's construction sheet, full height. -->
+  <defs>
+    <pattern id="dots" width="12" height="12" patternUnits="userSpaceOnUse">
+      <circle cx="6" cy="6" r="0.8" fill="#FFFFFF" fill-opacity="0.22" />
+    </pattern>
+  </defs>
+  <rect width="164" height="314" fill="#111111" />
+  <rect width="164" height="314" fill="url(#dots)" />
+  <!-- soft orange glow behind the mark -->
+  <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+    <stop offset="0" stop-color="#FF7A1A" stop-opacity="0.22" />
+    <stop offset="1" stop-color="#FF7A1A" stop-opacity="0" />
+  </radialGradient>
+  <circle cx="82" cy="112" r="90" fill="url(#glow)" />
+
+  <!-- F mark at grid unit 8: stem/bar 20 wide, dot diameter 20 replaces the lower bar -->
+  <g stroke="#FFFFFF" stroke-opacity="0.36" stroke-width="1.2" fill="none" stroke-linecap="round">
+    <line x1="18" y1="72" x2="146" y2="72" />
+    <line x1="18" y1="152" x2="146" y2="152" />
+    <line x1="52" y1="40" x2="52" y2="184" />
+    <circle cx="112" cy="72" r="22" />
+  </g>
+  <circle cx="85" cy="112" r="19" fill="none" stroke="#FF7A1A" stroke-opacity="0.8" stroke-width="1.2" />
+  <path d="M52 72 H112 V92 H72 V152 H52 Z" fill="#F3F0EB" />
+  <circle cx="85" cy="112" r="10" fill="#FF7A1A" />
+
+  <!-- wordmark -->
+  <text x="18" y="236" font-family="Outfit, 'Segoe UI', sans-serif" font-size="27" font-weight="600" fill="#F3F0EB" letter-spacing="-0.6">Fontier</text>
+  <text x="18" y="256" font-family="'Segoe UI', sans-serif" font-size="9.5" fill="#A19D97">Install, discover and</text>
+  <text x="18" y="269" font-family="'Segoe UI', sans-serif" font-size="9.5" fill="#A19D97">manage fonts.</text>
+</svg>

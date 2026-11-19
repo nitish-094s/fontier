@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Fontier: an F on a logo construction sheet. Only the essential guides are kept, drawn thick
+       enough to survive taskbar sizes: cap height, baseline, stem edge, one construction circle on
+       the bar's corner and the orange circle that sets the dot. Grid unit 32; strokes are 128 wide;
+       the orange dot (diameter 128) replaces the F's lower bar. -->
+  <defs>
+    <pattern id="dots" x="0" y="0" width="64" height="64" patternUnits="userSpaceOnUse">
+      <circle cx="32" cy="32" r="6" fill="#FFFFFF" fill-opacity="0.2" />
+    </pattern>
+    <clipPath id="tile">
+      <rect width="1024" height="1024" rx="232" />
+    </clipPath>
+  </defs>
+
+  <rect width="1024" height="1024" rx="232" fill="#111111" />
+  <g clip-path="url(#tile)">
+    <rect width="1024" height="1024" fill="url(#dots)" />
+    <g stroke="#FFFFFF" stroke-opacity="0.42" stroke-width="14" fill="none" stroke-linecap="round">
+      <line x1="120" y1="256" x2="904" y2="256" />
+      <line x1="120" y1="768" x2="904" y2="768" />
+      <line x1="320" y1="120" x2="320" y2="904" />
+      <circle cx="704" cy="256" r="136" />
+    </g>
+    <circle cx="528" cy="512" r="124" fill="none" stroke="#FF7A1A" stroke-opacity="0.8" stroke-width="14" />
+  </g>
+
+  <path d="M320 256 H704 V384 H448 V768 H320 Z" fill="#F3F0EB" />
+  <circle cx="528" cy="512" r="64" fill="#FF7A1A" />
+</svg>

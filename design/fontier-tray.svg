@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Tray / small-size version: the same mark without construction lines, which turn to noise at 16 px.
+       The letter is drawn a little larger to fill the tiny tile. -->
+  <rect width="1024" height="1024" rx="232" fill="#111111" />
+  <path d="M272 192 H768 V352 H432 V832 H272 Z" fill="#F3F0EB" />
+  <circle cx="560" cy="512" r="96" fill="#FF7A1A" />
+</svg>
