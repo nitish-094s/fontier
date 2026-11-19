@@ -1,6 +1,6 @@
 # Fontier
 
-**Install, discover and manage fonts on Windows.** Fontier installs a whole pile of fonts in one go (files, zips or folders), lets you browse about 2,000 free open-licensed families with live previews, keeps everything you have installed in one place, and can install new font downloads automatically while it sits in the tray.
+**Install, discover and manage fonts in bulk on Windows.** Fontier installs a whole pile of fonts in one go (files, zips or folders), lets you browse about 2,000 free open-licensed families with live previews, keeps everything you have installed in one place, and can install new font downloads automatically while it sits in the tray.
 
 Built with Tauri 2 (Rust) + React + Meta's Astryx design system. Windows 10/11.
 
