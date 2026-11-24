@@ -310,8 +310,8 @@ pub fn extract(zip_path: &Path, move_after: bool) -> ExtractResult {
 /// One font file's faces as (family name, identities) pairs.
 type FileFaces = Vec<(String, Vec<String>)>;
 
-/// Parsed fonts per zip / file / folder, keyed by path + size + mtime, so the 20-second
-/// Downloads poll only re-reads things that changed.
+/// Parsed fonts per zip / font file, keyed by path + size + date, so a scan only re-reads
+/// things that changed.
 static FACE_CACHE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, Vec<FileFaces>>>> =
     std::sync::LazyLock::new(Default::default);
 
@@ -323,67 +323,94 @@ fn faces_of(data: &[u8]) -> Option<FileFaces> {
     Some(faces.iter().map(|f| (f.family.clone(), fonts::face_ids(f))).collect())
 }
 
-fn cached(key: String, load: impl FnOnce() -> Vec<FileFaces>) -> Vec<FileFaces> {
+/// `None` from `load` means the file could not be read (still downloading, or locked by the
+/// browser or antivirus). That is not stored, so the next scan reads it again.
+fn cached(key: String, load: impl FnOnce() -> Option<Vec<FileFaces>>) -> Option<Vec<FileFaces>> {
     if let Some(v) = FACE_CACHE.lock().unwrap().get(&key) {
-        return v.clone();
+        return Some(v.clone());
     }
-    let v = load();
+    let v = load()?;
     FACE_CACHE.lock().unwrap().insert(key, v.clone());
-    v
+    Some(v)
 }
 
-fn zip_fonts(path: &str, size: u64, modified: u64) -> Vec<FileFaces> {
+/// The later of a file's "created" and "last changed" dates (unix seconds). Copying or moving a
+/// file keeps its old "last changed" date, so this is what tells a fresh arrival apart.
+fn stamp(meta: &fs::Metadata) -> u64 {
+    let secs = |t: std::io::Result<std::time::SystemTime>| t.ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
+    secs(meta.modified()).max(secs(meta.created()))
+}
+
+fn file_fonts(p: &Path, meta: &fs::Metadata) -> Option<Vec<FileFaces>> {
+    cached(format!("{}|{}|{}", p.to_string_lossy(), meta.len(), stamp(meta)), || fs::read(p).ok().map(|d| faces_of(&d).into_iter().collect()))
+}
+
+fn zip_fonts(path: &str, size: u64, modified: u64) -> Option<Vec<FileFaces>> {
     cached(format!("{path}|{size}|{modified}"), || {
+        let mut zip = fs::File::open(path).ok().and_then(|f| zip::ZipArchive::new(f).ok())?;
         let mut out = Vec::new();
-        if let Some(mut zip) = fs::File::open(path).ok().and_then(|f| zip::ZipArchive::new(f).ok()) {
-            for i in 0..zip.len() {
-                let Ok(mut e) = zip.by_index(i) else { continue };
-                if e.is_dir() || !fonts::is_font_name(e.name()) {
-                    continue;
-                }
-                let mut buf = Vec::new();
-                if e.read_to_end(&mut buf).is_ok() {
-                    if let Some(f) = faces_of(&buf) {
-                        out.push(f);
-                    }
+        for i in 0..zip.len() {
+            let Ok(mut e) = zip.by_index(i) else { continue };
+            if e.is_dir() || !fonts::is_font_name(e.name()) {
+                continue;
+            }
+            let mut buf = Vec::new();
+            if e.read_to_end(&mut buf).is_ok() {
+                if let Some(f) = faces_of(&buf) {
+                    out.push(f);
                 }
             }
         }
-        out
+        Some(out)
     })
 }
 
 fn zip_font_keys(info: &ZipInfo) -> Vec<Vec<Vec<String>>> {
-    zip_fonts(&info.path, info.size, info.modified).into_iter().map(|f| f.into_iter().map(|(_, ids)| ids).collect()).collect()
+    zip_fonts(&info.path, info.size, info.modified).unwrap_or_default().into_iter().map(|f| f.into_iter().map(|(_, ids)| ids).collect()).collect()
 }
 
-/// Font files inside a folder (up to 3 levels deep, at most 400 files looked at).
-fn folder_fonts(dir: &Path, modified: u64) -> Vec<FileFaces> {
-    cached(format!("{}|dir|{modified}", dir.to_string_lossy()), || {
-        let mut out = Vec::new();
-        let mut stack = vec![(dir.to_path_buf(), 0)];
-        let mut seen = 0;
-        while let Some((d, depth)) = stack.pop() {
-            let Ok(rd) = fs::read_dir(&d) else { continue };
-            for e in rd.filter_map(|e| e.ok()) {
-                seen += 1;
-                if seen > 400 {
-                    return out;
+struct FolderFonts {
+    files: Vec<FileFaces>,
+    /// Newest date of anything inside, so a font added deep down counts as a change to the folder.
+    newest: u64,
+    unreadable: bool,
+}
+
+/// Font files and font zips inside a folder (up to 3 levels deep, at most 400 entries looked at).
+fn folder_fonts(dir: &Path, own_stamp: u64) -> FolderFonts {
+    let mut out = FolderFonts { files: Vec::new(), newest: own_stamp, unreadable: false };
+    let mut stack = vec![(dir.to_path_buf(), 0)];
+    let mut seen = 0;
+    while let Some((d, depth)) = stack.pop() {
+        let Ok(rd) = fs::read_dir(&d) else { continue };
+        for e in rd.filter_map(|e| e.ok()) {
+            seen += 1;
+            if seen > 400 {
+                return out;
+            }
+            let p = e.path();
+            let Ok(meta) = fs::metadata(&p) else { continue };
+            out.newest = out.newest.max(stamp(&meta));
+            let name = p.to_string_lossy().to_lowercase();
+            let found = if meta.is_dir() {
+                if depth < 3 {
+                    stack.push((p, depth + 1));
                 }
-                let p = e.path();
-                if p.is_dir() {
-                    if depth < 3 {
-                        stack.push((p, depth + 1));
-                    }
-                } else if fonts::is_font_name(&p.to_string_lossy()) {
-                    if let Some(f) = fs::read(&p).ok().and_then(|d| faces_of(&d)) {
-                        out.push(f);
-                    }
-                }
+                continue;
+            } else if fonts::is_font_name(&name) {
+                file_fonts(&p, &meta)
+            } else if name.ends_with(".zip") {
+                zip_fonts(&p.to_string_lossy(), meta.len(), stamp(&meta))
+            } else {
+                continue;
+            };
+            match found {
+                Some(files) => out.files.extend(files),
+                None => out.unreadable = true,
             }
         }
-        out
-    })
+    }
+    out
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -397,12 +424,19 @@ pub struct FontCandidate {
     pub fonts_installed: u32,
     /// Family names found inside, most common first
     pub families: Vec<String>,
+    /// When it arrived: the later of created / last changed; for a folder, the newest thing inside.
     pub modified: u64,
     pub size: u64,
 }
 
 /// Everything in the watched folders that is (or holds) fonts. Non-font zips, documents, videos… are ignored.
 pub fn font_candidates(folders: &[String], installed: &HashSet<String>) -> Vec<FontCandidate> {
+    font_candidates_report(folders, installed).0
+}
+
+/// Like `font_candidates`, plus whether anything could not be read yet (worth another look soon).
+pub fn font_candidates_report(folders: &[String], installed: &HashSet<String>) -> (Vec<FontCandidate>, bool) {
+    let mut unreadable = false;
     let mut out = Vec::new();
     for folder in folders {
         let Ok(rd) = fs::read_dir(folder) else { continue };
@@ -415,19 +449,26 @@ pub fn font_candidates(folders: &[String], installed: &HashSet<String>) -> Vec<F
             .collect();
         for p in entries {
             let Ok(meta) = fs::metadata(&p) else { continue };
-            let modified = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
+            let mut modified = stamp(&meta);
             let name = p.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
             let path_s = p.to_string_lossy().to_string();
-            let (kind, files) = if meta.is_dir() {
+            let (kind, found) = if meta.is_dir() {
                 if zip_targets.contains(&path_s.to_lowercase()) || name == "Extracted ZIPs" {
                     continue;
                 }
-                ("folder", folder_fonts(&p, modified))
+                let f = folder_fonts(&p, modified);
+                modified = f.newest;
+                unreadable |= f.unreadable;
+                ("folder", Some(f.files))
             } else if fonts::is_font_name(&name) {
-                ("file", cached(format!("{path_s}|{}|{modified}", meta.len()), || fs::read(&p).ok().and_then(|d| faces_of(&d)).into_iter().collect()))
+                ("file", file_fonts(&p, &meta))
             } else if name.to_lowercase().ends_with(".zip") {
                 ("zip", zip_fonts(&path_s, meta.len(), modified))
             } else {
+                continue;
+            };
+            let Some(files) = found else {
+                unreadable = true;
                 continue;
             };
             if files.is_empty() {
@@ -455,7 +496,7 @@ pub fn font_candidates(folders: &[String], installed: &HashSet<String>) -> Vec<F
         }
     }
     out.sort_by(|a, b| b.modified.cmp(&a.modified));
-    out
+    (out, unreadable)
 }
 
 /// Zips in the given folders (top level only).
@@ -497,4 +538,54 @@ pub fn font_paths_in_zip_to(zip_path: &Path, dest_dir: &Path) -> Result<Vec<Path
         out.push(dest);
     }
     Ok(out)
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::os::windows::fs::OpenOptionsExt;
+
+    fn empty_dir(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("fontier-test-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// A zip holding one real font (Arial ships with every Windows).
+    fn font_zip(path: &Path) {
+        let font = fs::read(r"C:\Windows\Fonts\arial.ttf").unwrap();
+        let mut z = zip::ZipWriter::new(fs::File::create(path).unwrap());
+        z.start_file("pack/Arial.ttf", zip::write::SimpleFileOptions::default()).unwrap();
+        z.write_all(&font).unwrap();
+        z.finish().unwrap();
+    }
+
+    #[test]
+    fn locked_zip_is_read_again_once_free() {
+        let dir = empty_dir("locked");
+        let zip = dir.join("pack.zip");
+        font_zip(&zip);
+        let folders = vec![dir.to_string_lossy().to_string()];
+
+        // Like a browser or antivirus holding the new download.
+        let lock = fs::OpenOptions::new().read(true).share_mode(0).open(&zip).unwrap();
+        let (found, unreadable) = font_candidates_report(&folders, &HashSet::new());
+        assert!(found.is_empty() && unreadable);
+
+        drop(lock);
+        let (found, unreadable) = font_candidates_report(&folders, &HashSet::new());
+        assert!(!unreadable);
+        assert_eq!((found.len(), found[0].fonts), (1, 1));
+    }
+
+    #[test]
+    fn finds_zips_inside_subfolders() {
+        let dir = empty_dir("nested");
+        fs::create_dir_all(dir.join("Fonts").join("deeper")).unwrap();
+        font_zip(&dir.join("Fonts").join("deeper").join("pack.zip"));
+        let (found, _) = font_candidates_report(&[dir.to_string_lossy().to_string()], &HashSet::new());
+        assert_eq!((found.len(), found[0].kind.as_str(), found[0].fonts), (1, "folder", 1));
+    }
 }
