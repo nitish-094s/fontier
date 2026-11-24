@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Fontier",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "identifier": "app.fontier",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -61,7 +61,19 @@
           "English"
         ]
       }
-    }
+    },
+    "createUpdaterArtifacts": true
   },
-  "mainBinaryName": "Fontier"
+  "mainBinaryName": "Fontier",
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZDMjZEOURBODQ1NkUzNDgKUldSSTQxYUUydGttYk9EcVZqM3F4aU9OSklFRUY2RlMxSSt0WDdMUy90ZEtudlU0NGhGMG9wa1YK",
+      "endpoints": [
+        "https://github.com/nitish-094s/fontier/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
 }

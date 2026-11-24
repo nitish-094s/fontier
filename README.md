@@ -47,16 +47,21 @@ Before anything is installed (Smart install, drop, Discover), each font is check
 - **Start with Windows** quietly in the tray.
 - **Single instance:** launching Fontier again brings the running window back.
 
+### Updates
+- Fontier checks this repository's latest GitHub release when it starts (and twice a day while it runs in the tray). When a newer version is out, it says so and updates in place with one click, then reopens.
+- Updates are signed: the app only installs files signed with the Fontier release key, so a tampered download is refused.
+- *Settings › Updates* shows the current version and has *Check for updates*.
+
 
 ## Install
-Run `Fontier_<version>_x64-setup.exe`.
+Download `Fontier_<version>_x64-setup.exe` from the [latest release](https://github.com/nitish-094s/fontier/releases/latest) and run it.
 
 Uninstall from *Settings › Apps › Fontier*. The uninstaller removes the app.
 
 Fonts are installed exactly like Windows' own *Install*: per user in `%LOCALAPPDATA%\Microsoft\Windows\Fonts` (registered under `HKCU`). *Install for everyone* uses an elevated step with a UAC prompt.
 
 ## Privacy
-No accounts and no telemetry. Fontier only connects to the font libraries (Google Fonts, Fontsource, Font Squirrel) to list, preview and download fonts.
+No accounts and no telemetry. Fontier only connects to the font libraries (Google Fonts, Fontsource, Font Squirrel) to list, preview and download fonts, and to GitHub to check for updates.
 
 ## Develop
 
@@ -73,6 +78,23 @@ npm run tauri build
 
 The installer lands in `src-tauri\target\release\bundle\nsis\`.
 
+## Release a new version
+1. Bump `version` in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `package.json`.
+2. Build with the release key (kept outside the repo, never committed):
+   ```powershell
+   $env:TAURI_SIGNING_PRIVATE_KEY = "$env:USERPROFILE\.tauri\fontier-updater.key"
+   $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
+   npm run tauri build
+   ```
+   Next to the installer this writes `Fontier_<version>_x64-setup.exe.sig`, the update signature.
+3. Write the update manifest and publish the release:
+   ```powershell
+   node scripts/latest-json.mjs "What changed in this version"
+   gh release create v<version> --title "Fontier <version>" --notes "What changed" `
+     src-tauri\target\release\bundle\nsis\Fontier_<version>_x64-setup.exe src-tauri\target\release\bundle\nsis\latest.json
+   ```
+   Installed copies find it through `releases/latest/download/latest.json`. Lose the key and existing installs can no longer be updated, so keep a copy somewhere safe.
+
 Artwork is generated from SVG sources in `design/`:
 
 ```powershell
@@ -85,7 +107,8 @@ node design/build-installer-art.cjs    # installer sidebar + header bitmaps
 - `src-tauri/src/archive.rs`: scanning drops, finding fonts in zips/folders, safe zip extraction
 - `src-tauri/src/smart.rs`: Smart install (folder watcher, temp extraction, install, clean-up)
 - `src-tauri/src/net.rs`: online font library catalog and family downloads
-- `src-tauri/src/lib.rs`: app commands, tray, start-with-Windows, single instance
+- `src-tauri/src/lib.rs`: app commands, tray, start-with-Windows, single instance, updater
+- `scripts/latest-json.mjs`: writes the update manifest (`latest.json`) for a release
 - `src-tauri/installer/`: the installer: `installer.nsi` (Tauri's NSIS template with Fontier changes marked "Fontier:": no folder or Start menu pages.
 - `src/pages/`: Home, Discover, FamilyView, Compare, Manage, Settings
 - `design/`: icon, tray and installer artwork sources

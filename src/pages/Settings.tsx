@@ -11,6 +11,7 @@ import { Monitor, Moon, Sun, X, FolderPlus } from 'lucide-react';
 import { useApp } from '../lib/state';
 import { api, formatBytes } from '../lib/api';
 import { enable as enableAutostart, disable as disableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart';
+import { getVersion } from '@tauri-apps/api/app';
 import { SOURCE_LABEL, type Source, type ThemeMode } from '../lib/types';
 
 function Section({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
@@ -26,7 +27,23 @@ function Section({ title, desc, children }: { title: string; desc?: string; chil
 }
 
 export function SettingsPage() {
-  const { settings, updateSettings, loadCatalog, catalog, catalogLoading } = useApp();
+  const { settings, updateSettings, loadCatalog, catalog, catalogLoading, update, updateState, updateError, updateProgress, checkForUpdate, installUpdate } = useApp();
+  const [version, setVersion] = useState('');
+  useEffect(() => {
+    getVersion().then(setVersion);
+  }, []);
+  const updateStatus =
+    updateState === 'downloading'
+      ? `Downloading Fontier ${update?.version}… ${Math.round(updateProgress * 100)}%`
+      : update
+        ? `Fontier ${update.version} is available.`
+        : updateState === 'checking'
+          ? 'Checking…'
+          : updateState === 'none'
+            ? 'You have the latest version.'
+            : updateState === 'error'
+              ? `Couldn't check: ${updateError}`
+              : `You have Fontier ${version}.`;
   const [cache, setCache] = useState<number | null>(null);
   const [autostart, setAutostart] = useState<boolean | null>(null);
   useEffect(() => {
@@ -142,9 +159,21 @@ export function SettingsPage() {
         </div>
       </Section>
 
+      <Section title="Updates" desc="Fontier looks for a new version on GitHub when it starts. Updates are signed, so only genuine Fontier releases install.">
+        <div className="row-gap">
+          <span className="muted small">{updateStatus}</span>
+          {update ? (
+            <Button size="sm" label={`Update to ${update.version}`} isLoading={updateState === 'downloading'} onClick={() => installUpdate()} />
+          ) : (
+            <Button size="sm" variant="ghost" label="Check for updates" isLoading={updateState === 'checking'} onClick={() => checkForUpdate()} />
+          )}
+        </div>
+        {update?.body && <div className="muted small">{update.body}</div>}
+      </Section>
+
       <Section title="About">
         <div className="muted small">
-          Fontier 0.1
+          Fontier {version}
         </div>
       </Section>
     </div>
