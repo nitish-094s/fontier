@@ -68,11 +68,15 @@ async fn scan_paths(app: AppHandle, paths: Vec<String>) -> Result<archive::ScanR
 }
 
 fn install_paths(st: &AppState, files: Vec<PathBuf>, scope: &str) -> Vec<InstallResult> {
-    let mut installed = fonts::installed_keys(&list_all(st));
+    install_paths_with(st, files, scope, &mut fonts::installed_keys(&list_all(st)))
+}
+
+/// Installs `files`, checking for duplicates against `installed` and adding what it installs to it.
+fn install_paths_with(st: &AppState, files: Vec<PathBuf>, scope: &str, installed: &mut std::collections::HashSet<String>) -> Vec<InstallResult> {
     if scope == "machine" {
         let (todo, done): (Vec<PathBuf>, Vec<PathBuf>) = files.into_iter().partition(|f| {
             let faces = fonts::parse_file(f);
-            !faces.is_empty() && !faces.iter().all(|x| fonts::face_installed(x, &installed))
+            !faces.is_empty() && !faces.iter().all(|x| fonts::face_installed(x, installed))
         });
         let mut results: Vec<InstallResult> = done
             .iter()
@@ -86,6 +90,11 @@ fn install_paths(st: &AppState, files: Vec<PathBuf>, scope: &str) -> Vec<Install
             let face = fonts::parse_file(f).into_iter().next();
             let dest = fonts::windows_font_dir().join(f.file_name().unwrap());
             let ok = outcome.is_ok() && dest.exists();
+            if ok {
+                for face in fonts::parse_file(f) {
+                    installed.extend(fonts::face_ids(&face));
+                }
+            }
             results.push(InstallResult {
                 source: f.to_string_lossy().into(),
                 family: face.as_ref().map(|x| x.family.clone()).unwrap_or_default(),
@@ -98,7 +107,7 @@ fn install_paths(st: &AppState, files: Vec<PathBuf>, scope: &str) -> Vec<Install
         fonts::broadcast_font_change();
         return results;
     }
-    let results = files.iter().map(|f| fonts::install_user(f, &mut installed)).collect();
+    let results = files.iter().map(|f| fonts::install_user(f, installed)).collect();
     fonts::broadcast_font_change();
     results
 }
