@@ -2,6 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { listen } from '@tauri-apps/api/event';
 import { useToast } from '@astryxdesign/core/Toast';
 import { Button } from '@astryxdesign/core/Button';
+import { check, type Update } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
 import { api, plural } from './api';
 import {
   DEFAULT_SETTINGS,
@@ -72,7 +74,18 @@ interface Ctx {
   setPreviewText: (t: string) => void;
   searchOpen: boolean;
   setSearchOpen: (o: boolean) => void;
+
+  /** A newer Fontier release on GitHub, once a check has found one. */
+  update: Update | null;
+  updateState: UpdateState;
+  updateError: string;
+  /** Download progress, 0 to 1. */
+  updateProgress: number;
+  checkForUpdate: (quiet?: boolean) => Promise<void>;
+  installUpdate: () => Promise<void>;
 }
+
+export type UpdateState = 'idle' | 'checking' | 'none' | 'downloading' | 'error';
 
 const AppContext = createContext<Ctx | null>(null);
 export const useApp = () => {
@@ -406,6 +419,72 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [pushRecents, reportInstall, refreshInstalled, refreshZips]);
 
+  // ---------------------------------------------------------------- updates
+  // Releases come from GitHub (see plugins.updater in tauri.conf.json). Each one is signed, and the
+  // updater refuses anything that doesn't match the public key built into the app.
+  const [update, setUpdate] = useState<Update | null>(null);
+  const [updateState, setUpdateState] = useState<UpdateState>('idle');
+  const [updateError, setUpdateError] = useState('');
+  const [updateProgress, setUpdateProgress] = useState(0);
+  const updateRef = useRef<Update | null>(null);
+
+  const installUpdate = useCallback(async () => {
+    const u = updateRef.current;
+    if (!u) return;
+    setUpdateState('downloading');
+    setUpdateProgress(0);
+    let total = 0;
+    let got = 0;
+    try {
+      await u.downloadAndInstall((e) => {
+        if (e.event === 'Started') total = e.data.contentLength ?? 0;
+        else if (e.event === 'Progress' && total) setUpdateProgress((got += e.data.chunkLength) / total);
+      });
+      // On Windows the installer has already closed Fontier and will open the new version.
+      await relaunch();
+    } catch (e) {
+      setUpdateState('error');
+      setUpdateError(String(e));
+      toast({ type: 'error', body: `Update failed: ${String(e)}` });
+    }
+  }, [toast]);
+
+  const checkForUpdate = useCallback(
+    async (quiet = false) => {
+      setUpdateState('checking');
+      try {
+        const u = await check();
+        updateRef.current = u;
+        setUpdate(u);
+        setUpdateState(u ? 'idle' : 'none');
+        if (u) {
+          toast({
+            body: `Fontier ${u.version} is available`,
+            isAutoHide: false,
+            uniqueID: 'update',
+            endContent: <Button size="sm" label="Update" onClick={() => installUpdate()} />,
+          });
+        }
+      } catch (e) {
+        // A quiet check (offline, GitHub down) just tries again later.
+        setUpdateState(quiet ? 'idle' : 'error');
+        setUpdateError(String(e));
+      }
+    },
+    [toast, installUpdate],
+  );
+
+  useEffect(() => {
+    if (!ready) return;
+    const first = setTimeout(() => checkForUpdate(true), 4000);
+    // Fontier can sit in the tray for weeks: look again twice a day.
+    const again = setInterval(() => checkForUpdate(true), 12 * 60 * 60 * 1000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(again);
+    };
+  }, [ready, checkForUpdate]);
+
   // ---------------------------------------------------------------- misc
   const saveCollections = useCallback((c: Collection[]) => {
     setCollections(c);
@@ -467,6 +546,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPreviewText,
     searchOpen,
     setSearchOpen,
+    update,
+    updateState,
+    updateError,
+    updateProgress,
+    checkForUpdate,
+    installUpdate,
   };
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
